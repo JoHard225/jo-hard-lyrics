@@ -56,7 +56,7 @@ elif menu == "Ajouter / Chercher":
     with st.form("ajout"):
         t = st.text_input("Titre", value=tit)
         a = st.text_input("Artiste", value=art)
-        g = st.selectbox("Genre", ["Rock", "Pop", "Jazz", "Autre"])
+        g = st.selectbox("Genre", ["Rock", "Pop", "Jazz", "Autre" , "Zouglou" ,"Zouk" , "Reggae" , "Catho" , "Rumba" , "Variété Inter" , "Variété Ivoirien"])
         p = st.text_area("Paroles", value=st.session_state.get('temp_lyrics', ''))
         if st.form_submit_button("Enregistrer dans mon app"):
             conn = sqlite3.connect('lyrics_db.db')
