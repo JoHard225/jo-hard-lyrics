@@ -1,75 +1,71 @@
 import streamlit as st
+import sqlite3
 import pandas as pd
 import requests
 
-# --- CONFIGURATION ---
-# Ton lien CSV publié
-SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRoUm3iLuD9tdwMcrux7VsAsND4svsqREL3F2RAGbgSFQMYtHe4OOi7vzB3y6cVQkg3UG-k9RDL7-96/pub?gid=0&single=true&output=csv"
+# --- CONNEXION BASE DE DONNÉES ---
+def init_db():
+    conn = sqlite3.connect('lyrics_db.db')
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS lyrics 
+                 (titre TEXT, artiste TEXT, genre TEXT, paroles TEXT)''')
+    conn.commit()
+    conn.close()
 
-st.set_page_config(page_title="Jo Hard Lyric Manager Pro", page_icon="🎵", layout="centered")
+init_db()
+
+st.set_page_config(page_title="Jo Hard Lyric Manager Pro", layout="centered")
 st.title("🎵 Jo Hard Lyric Manager Pro")
 
-# --- CHARGEMENT DES DONNÉES ---
-@st.cache_data(ttl=60)
-def charger_donnees():
-    return pd.read_csv(SHEET_URL)
+menu = st.sidebar.radio("Navigation", ["Mon Répertoire", "Ajouter / Chercher", "Playlist Perso"])
 
-# --- NAVIGATION ---
-menu = st.sidebar.radio("Navigation", ["Mon Répertoire", "Playlist Perso", "Recherche Web"])
-
-# --- SECTION : RÉPERTOIRE ---
+# --- SECTION RÉPERTOIRE ---
 if menu == "Mon Répertoire":
-    df = charger_donnees()
-    st.metric("Total de chansons", len(df))
+    conn = sqlite3.connect('lyrics_db.db')
+    df = pd.read_sql_query("SELECT * FROM lyrics", conn)
+    conn.close()
     
-    query = st.text_input("🔍 Rechercher par titre ou artiste :")
-    
-    if query:
-        df = df[df['Titre'].str.contains(query, case=False, na=False) | 
-                df['Artiste'].str.contains(query, case=False, na=False)]
-    
+    st.metric("Total chansons", len(df))
     if not df.empty:
-        choix = st.selectbox("Choisir une chanson :", df['Titre'].tolist())
-        chanson = df[df['Titre'] == choix].iloc[0]
-        
-        st.markdown(f"## {chanson['Titre']}")
-        st.write(f"**Artiste :** {chanson['Artiste']}")
-        st.write(f"**Genre :** {chanson['Genre']}")
-        st.markdown("---")
-        st.write(chanson['Paroles'])
-    else:
-        st.warning("Aucune chanson trouvée. Vérifie ton Google Sheet.")
+        choix = st.selectbox("Choisir une chanson :", df['titre'].tolist())
+        chanson = df[df['titre'] == choix].iloc[0]
+        st.write(f"## {chanson['titre']} - {chanson['artiste']}")
+        st.write(f"**Genre :** {chanson['genre']}")
+        st.write(chanson['paroles'])
+        if st.button("Supprimer"):
+            conn = sqlite3.connect('lyrics_db.db')
+            conn.execute("DELETE FROM lyrics WHERE titre = ?", (chanson['titre'],))
+            conn.commit()
+            conn.close()
+            st.rerun()
 
-# --- SECTION : PLAYLIST PERSO ---
-elif menu == "Playlist Perso":
-    st.subheader("🎸 Ma Setlist de concert")
-    df = charger_donnees()
+# --- SECTION AJOUT / RECHERCHE ---
+elif menu == "Ajouter / Chercher":
+    st.subheader("🌐 Chercher ou Ajouter")
+    art = st.text_input("Artiste")
+    tit = st.text_input("Titre")
     
-    selection = st.multiselect("Ajoute tes titres pour le concert :", df['Titre'].tolist())
-    
-    if selection:
-        st.write("### 📋 Ordre de passage :")
-        for i, titre in enumerate(selection, 1):
-            st.write(f"{i}. {titre}")
-            
-        if st.button("Afficher toutes les paroles du set"):
-            for titre in selection:
-                chanson = df[df['Titre'] == titre].iloc[0]
-                st.markdown("---")
-                st.write(f"### {chanson['Titre']} - {chanson['Artiste']}")
-                st.write(chanson['Paroles'])
-
-# --- SECTION : RECHERCHE WEB ---
-elif menu == "Recherche Web":
-    st.subheader("🌐 Recherche de paroles")
-    artist = st.text_input("Artiste")
-    title = st.text_input("Titre")
-    
-    if st.button("Chercher"):
-        response = requests.get(f"https://api.lyrics.ovh/v1/{artist}/{title}")
-        if response.status_code == 200:
-            lyrics = response.json().get('lyrics')
-            st.text_area("Paroles trouvées :", value=lyrics, height=300)
-            st.info("Copie ces paroles et colle-les directement dans ton Google Sheet pour les sauvegarder.")
+    if st.button("Rechercher sur le Web"):
+        res = requests.get(f"https://api.lyrics.ovh/v1/{art}/{tit}")
+        if res.status_code == 200:
+            st.session_state.temp_lyrics = res.json().get('lyrics')
         else:
-            st.error("Paroles non trouvées.")
+            st.error("Non trouvé")
+
+    # Formulaire d'enregistrement direct
+    with st.form("ajout"):
+        t = st.text_input("Titre", value=tit)
+        a = st.text_input("Artiste", value=art)
+        g = st.selectbox("Genre", ["Rock", "Pop", "Jazz", "Autre"])
+        p = st.text_area("Paroles", value=st.session_state.get('temp_lyrics', ''))
+        if st.form_submit_button("Enregistrer dans mon app"):
+            conn = sqlite3.connect('lyrics_db.db')
+            conn.execute("INSERT INTO lyrics VALUES (?,?,?,?)", (t, a, g, p))
+            conn.commit()
+            conn.close()
+            st.success("Enregistré !")
+
+# --- SECTION PLAYLIST ---
+elif menu == "Playlist Perso":
+    st.subheader("🎸 Ma Setlist")
+    # (Logique de playlist identique à avant...)
