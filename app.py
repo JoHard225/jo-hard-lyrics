@@ -1,41 +1,48 @@
 import streamlit as st
 import pandas as pd
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
-from fpdf import FPDF
-import requests
 
-# --- CONFIGURATION (À MODIFIER) ---
-SHEET_URL = https://docs.google.com/spreadsheets/d/1vK-7F-meD-OK0ejFORCi-YOhdJ3KdIosAG9BDXetEPE/edit?gid=0#gid=0
+# --- CONFIGURATION ---
+# Ton lien CSV publié est bien intégré ici avec les guillemets nécessaires
+SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRoUm3iLuD9tdwMcrux7VsAsND4svsqREL3F2RAGbgSFQMYtHe4OOi7vzB3y6cVQkg3UG-k9RDL7-96/pub?gid=0&single=true&output=csv"
 
-# --- CONFIGURATION DES PAGES ---
+# --- CONFIGURATION PAGE ---
 st.set_page_config(page_title="Jo Hard Lyric Manager Pro", layout="centered")
 st.title("🎵 Jo Hard Lyric Manager Pro")
 
-# --- NAVIGATION ---
-menu = st.sidebar.radio("Navigation", ["Recherche Web", "Mon Répertoire"])
-
-# --- FONCTION POUR LIRE/ÉCRIRE ---
-# (Note : Pour une utilisation réelle sur Streamlit Cloud, il faut charger tes identifiants via 'Secrets' dans Streamlit)
-# Pour simplifier, nous allons utiliser Pandas pour lire les données du CSV publié
+# --- CHARGEMENT DES DONNÉES ---
+@st.cache_data(ttl=60)
 def charger_donnees():
-    # Astuce : publie ton Google Sheet en CSV (Fichier > Partager > Publier sur le Web > CSV)
-    csv_url = SHEET_URL.replace('/edit#gid=', '/export?format=csv&gid=')
-    return pd.read_csv(csv_url)
+    return pd.read_csv(SHEET_URL)
 
-# --- SECTION RÉPERTOIRE ---
+# --- NAVIGATION ---
+menu = st.sidebar.radio("Navigation", ["Mon Répertoire"])
+
 if menu == "Mon Répertoire":
-    df = charger_donnees()
-    st.metric("Total", len(df))
-    
-    query = st.text_input("🔍 Rechercher :")
-    if query:
-        df = df[df['Titre'].str.contains(query, case=False) | df['Artiste'].str.contains(query, case=False)]
-    
-    choix = st.selectbox("Choisir une chanson :", df['Titre'].tolist())
-    chanson = df[df['Titre'] == choix].iloc[0]
-    
-    st.write(f"## {chanson['Titre']}")
-    st.write(f"**Artiste :** {chanson['Artiste']}")
-    st.write(chanson['Paroles'])
-               
+    try:
+        df = charger_donnees()
+        st.metric("Total de chansons", len(df))
+        
+        # Barre de recherche
+        query = st.text_input("🔍 Rechercher par titre ou artiste :")
+        
+        # Filtrage
+        if query:
+            filtre = df[df['Titre'].str.contains(query, case=False, na=False) | 
+                         df['Artiste'].str.contains(query, case=False, na=False)]
+        else:
+            filtre = df
+        
+        if not filtre.empty:
+            choix = st.selectbox("Choisir une chanson :", filtre['Titre'].tolist())
+            chanson = filtre[filtre['Titre'] == choix].iloc[0]
+            
+            st.markdown(f"## {chanson['Titre']}")
+            st.write(f"**Artiste :** {chanson['Artiste']}")
+            st.write(f"**Genre :** {chanson['Genre']}")
+            st.markdown("---")
+            st.write(chanson['Paroles'])
+        else:
+            st.warning("Aucune chanson trouvée.")
+            
+    except Exception as e:
+        st.error("Erreur de chargement. Vérifie que ton Google Sheet est bien publié en format CSV.")
